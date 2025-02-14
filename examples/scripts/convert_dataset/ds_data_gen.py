@@ -5,12 +5,80 @@ import re
 from .utils import ACTION_SPACE, ACTION_OUTPUT_FORMAT, QUERY_TEMPLATE
 
 
-def convert_to_distill_data(basic_data: list) -> list:
-    pass
+def convert_to_distill_data(basic_data: list, task="long_cot") -> list:
+    def make_conv(system_prompt: str = "", user_prompt: str = "", image_path: str = "", assistant_answer: str = ""):
+        conv = []
+        if system_prompt:
+            conv.append({"role": "system", "content": [{"type": "text", "text": system_prompt}]})
+        if user_prompt and image_path:
+            conv.append(
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": user_prompt}, {"type": "image", "image": image_path}],
+                }
+            )
+        elif user_prompt:
+            conv.append({"role": "user", "content": [{"type": "text", "text": user_prompt}]})
+        if assistant_answer:
+            conv.append({"role": "assistant", "content": [{"type": "text", "text": assistant_answer}]})
+        return json.dumps(conv, ensure_ascii=False)
+
+    data = []
+    for item in basic_data:
+        user_prompt = QUERY_TEMPLATE.substitute(
+            instruction=item["instruction"], action_spaces=ACTION_SPACE, output_action_format=ACTION_OUTPUT_FORMAT
+        )
+        answer = ""
+        if task == "long_cot":
+            answer = f"<think>{item['long_cot']}</think><answer>{item['answer'] if not item['answer'].startswith('<answer>') else item['answer'].lstrip('<answer>').rstrip('</answer>')}</answer>"
+        elif task == "short_cot":
+            answer = f"<think>{item['short_cot']}</think><answer>{item['answer'] if not item['answer'].startswith('<answer>') else item['answer'].lstrip('<answer>').rstrip('</answer>')}</answer>"
+        elif task == "action":
+            answer = f"<answer>{item['answer'] if not item['answer'].startswith('<answer>') else item['answer'].lstrip('<answer>').rstrip('</answer>')}</answer>"
+        else:
+            raise ValueError(f"Unsupported task: {task}")
+        message_str = make_conv(
+            system_prompt="", user_prompt=user_prompt, image_path=item["image_path"], assistant_answer=answer
+        )
+        data.append(
+            {
+                "message": message_str,
+                "question": item["instruction"],
+            }
+        )
+    return data
 
 
 def convert_to_rl_data(basic_data: list) -> list:
-    pass
+    def make_conv(system_prompt: str = "", user_prompt: str = "", image_path: str = ""):
+        conv = []
+        if system_prompt:
+            conv.append({"role": "system", "content": [{"type": "text", "text": system_prompt}]})
+        if user_prompt and image_path:
+            conv.append(
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": user_prompt}, {"type": "image", "image": image_path}],
+                }
+            )
+        elif user_prompt:
+            conv.append({"role": "user", "content": [{"type": "text", "text": user_prompt}]})
+        return json.dumps(conv, ensure_ascii=False)
+
+    data = []
+    for item in basic_data:
+        user_prompt = QUERY_TEMPLATE.substitute(
+            instruction=item["instruction"], action_spaces=ACTION_SPACE, output_action_format=ACTION_OUTPUT_FORMAT
+        )
+        message_str = make_conv(system_prompt="", user_prompt=user_prompt, image_path=item["image_path"])
+        data.append(
+            {
+                "message": message_str,
+                "answer": item["answer"],
+                "question": item["instruction"],
+            }
+        )
+    return data
 
 
 def extract_xml(text: str, tag: str) -> str:
@@ -37,8 +105,6 @@ def main(args):
             data = json.load(f)
     else:
         raise ValueError(f"Unsupported file type: {args.input_path}")
-    # hack
-    image_dir = "/data/true_nas/zfs_share1/zyc/data/data/Yuxiang007/AMEX/AMEX/screenshot"
 
     # get basic data fields
     basic_data = []
