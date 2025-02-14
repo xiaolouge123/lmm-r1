@@ -114,7 +114,7 @@ ACTION_OUTPUT_FORMAT = """
     <action_name>
         ACTION_NAME
     </action_name>
-    <parameters> // if the action has parameters else null
+    <parameters> // SKIP IF THE ACTION HAS NO PARAMETERS
         <parameter>
             <param_name>
                 PARAM_NAME
@@ -139,7 +139,7 @@ Here is the action space you may take:
     $action_spaces
 </action space>
 
-The output action format likes this:
+The output action format should look like this:
 <output action format>
     $output_action_format
 </output action format>
