@@ -1,7 +1,6 @@
 from string import Template
 
-ACTION_SPACE = """
-<action>
+ACTION_SPACE = """<action>
     <action_name>
         SWIPE
     </action_name>
@@ -103,11 +102,9 @@ ACTION_SPACE = """
     <description>
         Wait for a while
     </description>
-</action>
-"""
+</action>"""
 
-ACTION_OUTPUT_FORMAT = """
-<action_description>
+ACTION_OUTPUT_FORMAT = """<action_description>
     ACTION_DESCRIPTION_FOR_SHORT_IN_NATURAL_LANGUAGE
 </action_description>
 <action>
@@ -124,12 +121,10 @@ ACTION_OUTPUT_FORMAT = """
             </param_value>
         </parameter>
     </parameters>
-</action>
-"""
+</action>"""
 
 QUERY_TEMPLATE = Template(
-    """
-Given the task:
+"""Given the task:
 <task>
     $instruction
 </task>
@@ -145,6 +140,5 @@ The output action format should look like this:
 </output action format>
 
 Please think step by step to find out the proper action to take. And only output one action at a time.
-Output the thinking process in <think></think> and final answer in <answer> </answer> tags, i.e., <think>your thinking process</think><answer>your action</answer>.
-"""
+Output the thinking process in <think></think> and final answer in <answer> </answer> tags, i.e., <think>your thinking process</think><answer>your action</answer>."""
 )

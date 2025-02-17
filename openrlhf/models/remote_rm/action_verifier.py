@@ -7,7 +7,7 @@ from multiprocessing import Process, Queue
 
 
 from flask import Flask, jsonify, request
-from utils import action_accuracy_reward as accuracy_reward_func, format_reward as format_reward_func
+from .utils import action_accuracy_reward as accuracy_reward_func, format_reward as format_reward_func
 
 app = Flask(__name__)
 
