@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 import re
-from .utils import ACTION_SPACE, ACTION_OUTPUT_FORMAT, QUERY_TEMPLATE
+from utils import ACTION_SPACE, ACTION_OUTPUT_FORMAT, QUERY_TEMPLATE
 
 
 def convert_to_distill_data(basic_data: list, task="long_cot") -> list:
@@ -76,6 +76,7 @@ def convert_to_rl_data(basic_data: list) -> list:
                 "message": message_str,
                 "answer": item["answer"],
                 "question": item["instruction"],
+                "step_index": item["step_index"],
             }
         )
     return data
@@ -113,6 +114,7 @@ def main(args):
     for item in data:
         basic_data.append(
             {
+                "step_index": item["step_index"],
                 "instruction": item["instruction"],
                 "image_path": item["image_path"],
                 "answer": item["answer"],
@@ -132,6 +134,7 @@ def main(args):
         raise ValueError(f"Unsupported data type: {args.data_type}")
 
     # 保存数据
+    print(data[0])
     with open(args.output_path, "w") as f:
         json.dump(data, f, ensure_ascii=False)
 
