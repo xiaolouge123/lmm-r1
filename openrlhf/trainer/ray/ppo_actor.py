@@ -42,6 +42,9 @@ class ActorPPOTrainer(PPOTrainer):
         self.vllm_engines = vllm_engines
         self.critic_train_remote = critic_train_remote
 
+        print("ActorPPOTrainer processor: ", self.processor)
+        print("ActorPPOTrainer data_processor: ", self.data_processor)
+
         self.experience_maker = RemoteExperienceMaker(
             self.actor,
             self.critic,

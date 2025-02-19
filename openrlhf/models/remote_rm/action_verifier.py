@@ -24,11 +24,14 @@ def get_response_from_query(q: str):
         response = response.replace(e, "")
     return response.strip()
 
+show_info = True
 
 @app.route("/get_reward", methods=["POST"])
 def get_reward():
+    global show_info
     # 获取请求中的 JSON 数据
     data = request.get_json()
+    # print(f"data keys: {data.keys()}")
     # 检查是否有 'query' 字段
     if "query" not in data:
         return jsonify({"error": "queries field is required"}), 400
@@ -41,6 +44,10 @@ def get_reward():
             print(f"problem not exists: {problem}")
             rewards.append(0.0)
             continue
+        if show_info:
+            print(f"problem exists: {problem}")
+            show_info = False
+
         answer = problem_to_answer[problem]
         response = get_response_from_query(q) or q
         if response is None:
@@ -48,7 +55,7 @@ def get_reward():
 
         format_reward = float(format_reward_func(response))
         acc_reward = float(accuracy_reward_func(response, answer))
-        do_print = random.randint(1, 20) == 1
+        do_print = random.randint(1, 20) < 10
         if do_print:
             info = f"Query: {q}\n\nProblem: {problem}\n\n Answer: {answer}\n\n Response: {response}\n\n Format Reward: {format_reward}\n\n Acc Reward: {acc_reward}\n\n"
             info = re.sub(r"<\|.*?\|>", "", info)
@@ -56,6 +63,8 @@ def get_reward():
 
         rewards.append(0.5 * format_reward + 0.5 * acc_reward)
     # 返回包含 rewards 的响应
+    if random.randint(1, 10) <= 5:
+        print(f"Rewards: {rewards}")
     return jsonify({"rewards": rewards})
 
 
@@ -79,6 +88,8 @@ if __name__ == "__main__":
         problem = item[args.input_key]
         answer = item["answer"].strip()
         problem_to_answer[problem] = answer
+    k = random.choice(list(problem_to_answer.keys()))
+    print(f"preload sample problem: {k}, answer: {problem_to_answer[k]}")
 
     if args.prompt_template == "chatml":
         problem_pattern = r"<\|im_start\|>user\n(.*?)<\|im_end\|>"
