@@ -279,7 +279,7 @@ class NaiveExperienceMaker(ABC):
             if self.data_processor is not None:
                 inputs = self.data_processor(prompts, self.prompt_max_len, device="cuda")
                 visual_inputs = {}
-                for k,v in inputs.items():
+                for k, v in inputs.items():
                     if k not in ["input_ids", "attention_mask"]:
                         visual_inputs[k] = v
             else:
@@ -322,17 +322,19 @@ class NaiveExperienceMaker(ABC):
         visual_inputs = samples.visual_inputs
 
         # log probs
-        action_log_probs = self.actor(sequences, num_actions, attention_mask, visual_inputs)
+        action_log_probs = self.actor(sequences, num_actions, attention_mask, visual_inputs=visual_inputs)
 
         # init log probs
         if self.initial_model is not None:
-            base_action_log_probs = self.initial_model(sequences, num_actions, attention_mask, visual_inputs)
+            base_action_log_probs = self.initial_model(
+                sequences, num_actions, attention_mask, visual_inputs=visual_inputs
+            )
         else:
             base_action_log_probs = None
 
         # values
         if self.critic is not None:
-            value = self.critic(sequences, num_actions, attention_mask, visual_inputs)
+            value = self.critic(sequences, num_actions, attention_mask, visual_inputs=visual_inputs)
         else:
             value = None
 
@@ -348,7 +350,7 @@ class NaiveExperienceMaker(ABC):
                 )
         else:
             # local RM
-            r = self.reward_model(sequences, attention_mask)
+            r = self.reward_model(sequences, attention_mask, visual_inputs=visual_inputs)
 
         if self.initial_model is not None:
             kl = compute_approx_kl(
@@ -592,11 +594,15 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
         )
         visual_inputs_cpu = None
         if visual_inputs is not None:
-            visual_inputs_cpu = {k: v.to("cpu") for k, v in visual_inputs.items()}        
+            visual_inputs_cpu = {k: v.to("cpu") for k, v in visual_inputs.items()}
         # init log probs
         if self.initial_model is not None:
             base_action_log_probs_ref = self.initial_model.forward.remote(
-                sequences_cpu, num_actions, attention_mask_cpu, packed_seq_lens=packed_seq_lens,visual_inputs=visual_inputs_cpu
+                sequences_cpu,
+                num_actions,
+                attention_mask_cpu,
+                packed_seq_lens=packed_seq_lens,
+                visual_inputs=visual_inputs_cpu,
             )
 
             if args.colocate_actor_ref or args.colocate_all_models:
@@ -608,7 +614,11 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
         # values
         if self.critic is not None:
             value_ref = self.critic.forward.remote(
-                sequences_cpu, num_actions, attention_mask_cpu, packed_seq_lens=packed_seq_lens, visual_inputs=visual_inputs_cpu
+                sequences_cpu,
+                num_actions,
+                attention_mask_cpu,
+                packed_seq_lens=packed_seq_lens,
+                visual_inputs=visual_inputs_cpu,
             )
             # avoid CUDA OOM when colocate models
             if args.colocate_critic_reward or args.colocate_all_models:
@@ -622,7 +632,14 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
         # support remote RM API with ray
         if not self.remote_rm_url:
             for rm in self.reward_model:
-                r_refs.append(rm.forward.remote(sequences_cpu, attention_mask_cpu, packed_seq_lens=packed_seq_lens, visual_inputs=visual_inputs_cpu))
+                r_refs.append(
+                    rm.forward.remote(
+                        sequences_cpu,
+                        attention_mask_cpu,
+                        packed_seq_lens=packed_seq_lens,
+                        visual_inputs=visual_inputs_cpu,
+                    )
+                )
         else:
             # remote RM
             if not self.packing_samples:
@@ -649,7 +666,9 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
             ray.get([self.reward_model[0].empty_cache.remote()])
 
         # log probs
-        action_log_probs = self.actor(sequences, num_actions, attention_mask, packed_seq_lens=packed_seq_lens)
+        action_log_probs = self.actor(
+            sequences, num_actions, attention_mask, packed_seq_lens=packed_seq_lens, visual_inputs=visual_inputs
+        )
         actor_value_rm_time = time.time() - start
 
         # wait initial/critic/reward model done
@@ -773,19 +792,26 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
                 messages = all_prompts[i * batch_size : (i + 1) * batch_size]
                 print(f"DEBUG: Engine {i} receives {len(messages)} messages")  # Debug
                 if messages:
-                    prompts = self.data_processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+                    prompts = self.data_processor.apply_chat_template(
+                        messages, tokenize=False, add_generation_prompt=True
+                    )
                     images = [self.data_processor.get_images_from_messages(m) for m in messages]
                     print(f"DEBUG: Engine {i} receives {len(images)} images, {images[0]}")  # Debug
-                    vllm_inputs = [{
+                    vllm_inputs = [
+                        {
                             "prompt": p,
                             "multi_modal_data": {"image": imgs} if imgs else None,
                             "mm_processor_kwargs": {
                                 "min_pixels": int(os.getenv("MIN_PIXELS", 4 * 28 * 28)),
                                 "max_pixels": int(os.getenv("MAX_PIXELS", 640 * 28 * 28)),
                             },
-                        } for p, imgs in zip(prompts, images)]
+                        }
+                        for p, imgs in zip(prompts, images)
+                    ]
                     refs.append(
-                        llm.add_requests_vlm.remote(rank, sampling_params=sampling_params, vllm_vision_input=vllm_inputs)
+                        llm.add_requests_vlm.remote(
+                            rank, sampling_params=sampling_params, vllm_vision_input=vllm_inputs
+                        )
                     )
 
         ray.get(refs)
@@ -807,7 +833,9 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
         for i in range(0, len(all_outputs), args.micro_rollout_batch_size):
             outputs = all_outputs[i : i + args.micro_rollout_batch_size]
             prompts = all_prompts[i : i + self.strategy.args.micro_rollout_batch_size]
-            print(f"DEBUG: Processing batch from index {i} with {len(outputs)} outputs and {len(prompts)} prompts")  # Debug each batch
+            print(
+                f"DEBUG: Processing batch from index {i} with {len(outputs)} outputs and {len(prompts)} prompts"
+            )  # Debug each batch
             if not self.packing_samples:
                 print(f"DEBUG: no packing samples")  # Debug: first output
                 # NOTE: concat all outputs to following format:
