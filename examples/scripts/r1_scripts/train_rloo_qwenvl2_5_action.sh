@@ -3,9 +3,10 @@ set -x
 export CUDA_VISIBLE_DEVICES="3,4,5,6,7"
 NUM_GPUS=$(echo $CUDA_VISIBLE_DEVICES | tr ',' '\n' | wc -l)
 
-RUN_NAME="Qwen2.5-VL-3B-Inst-Action-RLOO-r1-zero"
-PATH_TO_MODEL="/data/true_nas/zfs_share1/zyc/data/models/Qwen/Qwen2.5-VL-3B-Instruct"
-PATH_TO_DATASET="/data/true_nas/zfs_share1/zyc/workspace/lmm-r1/examples/data/AMEX_acton_rl_chatml_rand_2k.json"
+# RUN_NAME="Qwen2.5-VL-3B-Inst-Action-RLOO-r1-zero"
+RUN_NAME="Qwen2.5-VL-7B-Inst-Action-RLOO-r1-zero"
+PATH_TO_MODEL="/data/true_nas/zfs_share1/zyc/data/models/Qwen/Qwen2.5-VL-7B-Instruct"
+PATH_TO_DATASET="/data/true_nas/zfs_share1/zyc/workspace/lmm-r1/examples/data/AMEX_acton_rl_chatml.json"
 OUTPUT_DIR="/data/true_nas/zfs_share1/zyc/expr"
 
 
@@ -39,6 +40,11 @@ else
     echo "Ray is already running"
 fi
 
+#    -- /usr/local/cuda/bin/nsys profile --trace=cuda,cudnn,cublas,nvtx,osrt,oshmem \
+#    --output="${OUTPUT_DIR}/${RUN_NAME}/profile" \
+#    --force-overwrite true \
+#    --stats=true \
+
 ray job submit --address="http://127.0.0.1:8265" \
    --runtime-env-json='{"working_dir": "/data/true_nas/zfs_share1/zyc/projects/OpenRLHF"}' \
    -- python3 -m openrlhf.cli.train_ppo_ray \
@@ -46,28 +52,28 @@ ray job submit --address="http://127.0.0.1:8265" \
    --ref_num_gpus_per_node 1 \
    --remote_rm_url http://127.0.0.1:5000/get_reward \
    --actor_num_nodes 1 \
-   --actor_num_gpus_per_node 1 \
+   --actor_num_gpus_per_node 4 \
    --vllm_num_engines 1 \
-   --vllm_tensor_parallel_size 2 \
+   --vllm_tensor_parallel_size 1 \
    --vllm_enable_sleep \
-   --vllm_gpu_memory_utilization 0.6 \
+   --vllm_gpu_memory_utilization 0.8 \
    --vllm_sync_backend gloo \
    --enable_prefix_caching \
    --pretrain $PATH_TO_MODEL \
    --save_path $OUTPUT_DIR/$RUN_NAME \
    --micro_train_batch_size 2 \
-   --train_batch_size 128 \
-   --micro_rollout_batch_size 4 \
-   --rollout_batch_size 1024 \
+   --train_batch_size 64 \
+   --micro_rollout_batch_size 8 \
+   --rollout_batch_size 64 \
    --temperature 0.6 \
    --n_samples_per_prompt 8 \
    --max_epochs 1 \
-   --num_episodes 2 \
-   --prompt_max_len 1024 \
+   --num_episodes 10 \
+   --prompt_max_len 2048 \
    --max_samples 100000 \
    --generate_max_len 3000 \
    --advantage_estimator rloo \
-   --zero_stage 3 \
+   --zero_stage 2 \
    --bf16 \
    --actor_learning_rate 1e-6 \
    --init_kl_coef 0.0 \
@@ -76,10 +82,13 @@ ray job submit --address="http://127.0.0.1:8265" \
    --normalize_reward \
    --flash_attn \
    --gradient_checkpointing \
-   --save_steps 10 \
+   --save_steps 20 \
    --ckpt_path $OUTPUT_DIR/$RUN_NAME/ckpt \
    --save_hf_ckpt \
    --use_tensorboard $OUTPUT_DIR/$RUN_NAME/logs \
-   --train_vlm
+   --train_vlm | tee "${OUTPUT_DIR}/${RUN_NAME}/train.log"
 
-# ray stop
+ray stop
+
+
+# --gradient_accumulation_steps 8 \

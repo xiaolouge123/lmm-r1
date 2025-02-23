@@ -212,7 +212,7 @@ class NaiveExperienceMaker(ABC):
             disable=not self.strategy.is_rank_0(),
         ):
             experiences.append(self.make_experience(samples).to_device("cpu"))
-        print(f"super make_experience_list experiences[0].info: {experiences[0].info}")
+        print(f"naive make_experience_list experiences[0].info: {experiences[0].info}")
 
         experiences, rewards = self.process_experiences(experiences)
 
@@ -666,6 +666,8 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
             ray.get([self.reward_model[0].empty_cache.remote()])
 
         # log probs
+        if visual_inputs is not None:
+            print(f"DEBUG: before action_log_probs visual_inputs: {[(k,v.dtype) for k, v in visual_inputs.items()]}")
         action_log_probs = self.actor(
             sequences, num_actions, attention_mask, packed_seq_lens=packed_seq_lens, visual_inputs=visual_inputs
         )
@@ -790,7 +792,7 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
             # For VLM
             for i, llm in enumerate(llms):
                 messages = all_prompts[i * batch_size : (i + 1) * batch_size]
-                print(f"DEBUG: Engine {i} receives {len(messages)} messages")  # Debug
+                print(f"DEBUG: Engine {i} receives {len(messages)} multi-modal messages")  # Debug
                 if messages:
                     prompts = self.data_processor.apply_chat_template(
                         messages, tokenize=False, add_generation_prompt=True

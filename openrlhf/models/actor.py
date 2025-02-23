@@ -211,7 +211,7 @@ class Actor(nn.Module):
                 position_ids = reset_position_ids(attention_mask)
             # explicitly ignore attention_mask for packing_samples
             attention_mask = None
-
+        print(f"DEBUG: actor forward before model, position_ids: {position_ids.shape, position_ids.dtype}")
         output = self.model(sequences, attention_mask=attention_mask, position_ids=position_ids, **visual_inputs)
         # https://github.com/OpenRLHF/OpenRLHF/pull/634
         output["logits"] = output["logits"].to(torch.float32)

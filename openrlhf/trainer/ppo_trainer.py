@@ -161,7 +161,7 @@ class PPOTrainer(ABC):
         )
         packing_samples = getattr(self.args, "packing_samples", False)
         self.replay_buffer = NaiveReplayBuffer(
-            micro_train_batch_size, self.data_processor, buffer_limit, buffer_cpu_offload, packing_samples,
+            micro_train_batch_size, self.data_processor, limit=buffer_limit, cpu_offload=buffer_cpu_offload, packing_samples=packing_samples,
             drop_maxlen=self.args.drop_maxlen, 
             maxlen=self.args.generate_max_len + prompt_max_len,
         )
@@ -246,9 +246,11 @@ class PPOTrainer(ABC):
                         output = self.tokenizer.batch_decode(
                             experience.sequences[0].unsqueeze(0), skip_special_tokens=True
                         )
-                        self.strategy.print(output)
+                        print(f"DEBUG: experience.sequences bs size: {len(experience.sequences)}")
+                        self.strategy.print(("DEBUG: One generated sequence:",output))
                     self.replay_buffer.append(experience)
 
+                print(f"DEBUG: replay buffer length: {len(self.replay_buffer)}")
                 self.replay_buffer.normalize("advantages", self.strategy)
                 status = self.ppo_train(steps)
                 self.replay_buffer.clear()
@@ -293,6 +295,9 @@ class PPOTrainer(ABC):
             for experience in pbar:
                 experience.to_device(device)
                 status = self.training_step(experience, global_steps)
+                # # Explicitly delete experience data after use
+                # del experience
+                # torch.cuda.empty_cache()
 
                 # for DP
                 # weighted mean for kl
@@ -363,7 +368,8 @@ class PPOTrainer(ABC):
             num_actions = experience.action_mask.size(1)
             packed_seq_lens = None
             attention_mask = experience.attention_mask
-
+        
+        print(f"DEBUG: in training_step_actor, sequences bs size: {sequences.size()}")
         # actor loss
         action_log_probs, output = self.actor(
             sequences,
@@ -411,7 +417,7 @@ class PPOTrainer(ABC):
                 aux_loss = 0
             loss = ptx_loss + aux_loss * self.args.aux_loss_coef
             self.strategy.backward(self.ptx_coef * loss, self.actor, self.actor_optim)
-
+        # hack for test, just comment the below line tostop bachwards gradient calculation to test the OOM issue
         self.strategy.optimizer_step(self.actor_optim, self.actor, self.actor_scheduler, name="actor")
         if self.ema_model:
             self.strategy.moving_average(self.actor, self.ema_model, self.ema_beta, "cuda")

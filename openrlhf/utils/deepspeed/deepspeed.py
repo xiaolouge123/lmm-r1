@@ -64,7 +64,8 @@ class DeepspeedStrategy(ABC):
 
         self.is_rlhf = False
         self.time_steps = defaultdict(int)
-
+        self.gradient_accumulation_steps = getattr(args, "gradient_accumulation_steps", 1)
+        
     def set_seed(self, seed: int) -> None:
         random.seed(seed)
         np.random.seed(seed)
@@ -229,6 +230,7 @@ class DeepspeedStrategy(ABC):
             zpg=self.zpg,
             grad_accum_dtype=self.grad_accum_dtype,
             overlap_comm=self.overlap_comm,
+            gradient_accumulation_steps=self.gradient_accumulation_steps,
         )
 
         ds_config["train_micro_batch_size_per_gpu"] = self.micro_train_batch_size

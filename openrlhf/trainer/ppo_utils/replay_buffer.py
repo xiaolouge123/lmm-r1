@@ -215,6 +215,45 @@ class NaiveReplayBuffer(ABC):
 
     def clear(self) -> None:
         self.items.clear()
+    
+    # def clear(self):
+    #     # 1. 首先释放每个Experience对象中的所有tensor
+    #     for item in self.items:
+    #         if hasattr(item, 'sequences'):
+    #             del item.sequences
+    #         if hasattr(item, 'attention_mask'):
+    #             del item.attention_mask
+    #         if hasattr(item, 'action_mask'):
+    #             del item.action_mask
+    #         if hasattr(item, 'action_log_probs'):
+    #             del item.action_log_probs
+    #         if hasattr(item, 'values'):
+    #             del item.values
+    #         if hasattr(item, 'advantages'):
+    #             del item.advantages
+    #         if hasattr(item, 'returns'):
+    #             del item.returns
+    #         if hasattr(item, 'info'):
+    #             del item.info
+    #         if hasattr(item, 'visual_inputs'):
+    #             del item.visual_inputs
+                
+    #     # 2. 清空列表
+    #     self.items.clear()
+        
+    #     # 3. 强制执行垃圾回收
+    #     import gc
+    #     gc.collect()
+        
+    #     # 4. 清理GPU缓存
+    #     if torch.cuda.is_available():
+    #         torch.cuda.empty_cache()
+        
+    # def __del__(self):
+    #     try:
+    #         self.clear()
+    #     except:
+    #         pass
 
     @torch.no_grad()
     def sample(self) -> Experience:

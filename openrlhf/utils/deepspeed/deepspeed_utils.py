@@ -15,6 +15,7 @@ def get_train_ds_config(
     zpg=8,
     grad_accum_dtype=None,
     overlap_comm=False,
+    gradient_accumulation_steps=1,
 ):
     device = "cpu" if offload else "none"
     zero_opt_dict = {
@@ -38,7 +39,9 @@ def get_train_ds_config(
     if overlap_comm:
         zero_opt_dict["overlap_comm"] = True
         zero_opt_dict["contiguous_gradients"] = True
-
+    
+    if gradient_accumulation_steps > 1:
+        zero_opt_dict["gradient_accumulation_steps"] = gradient_accumulation_steps
     return {
         "steps_per_print": 100,
         "zero_optimization": zero_opt_dict,
