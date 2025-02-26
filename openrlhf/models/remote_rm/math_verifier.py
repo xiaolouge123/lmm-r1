@@ -115,7 +115,7 @@ def get_reward():
         format_reward = float(verify_format(response))
         input_queue.put((response, answer))
         acc_reward = float(output_queue.get())
-        do_print = random.randint(1, 20) == 1
+        do_print = random.randint(1, 20) < 3
         if do_print:
             info=f"Query: {q}\n\nProblem: {problem}\n\n Answer: {answer}\n\n Response: {response}\n\n Format Reward: {format_reward}\n\n Acc Reward: {acc_reward}\n\n"
             info = re.sub(r"<\|.*?\|>","",info)

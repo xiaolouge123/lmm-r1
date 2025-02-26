@@ -9,7 +9,7 @@ EXP_NAME="time_$(date +%Y%m%d_%H%M%S)"
 PATH_TO_MODEL="/data/true_nas/zfs_share1/zyc/data/models/Qwen/Qwen2.5-VL-7B-Instruct"
 PATH_TO_DATASET="/data/true_nas/zfs_share1/zyc/workspace/lmm-r1/examples/data/AMEX_acton_rl_chatml.json"
 OUTPUT_DIR="/data/true_nas/zfs_share1/zyc/expr"
-
+RESTORE_CHECKPOINT="/data/true_nas/zfs_share1/zyc/expr/Qwen2.5-VL-7B-Inst-Action-RLOO-r1-zero/time_20250224_094740/ckpt"
 
 cleanup() {
     echo "执行清理操作，杀死子进程..."
@@ -64,7 +64,7 @@ ray job submit --address="http://127.0.0.1:8265" \
    --save_path $OUTPUT_DIR/$RUN_NAME \
    --micro_train_batch_size 1 \
    --train_batch_size 128 \
-   --micro_rollout_batch_size 8 \
+   --micro_rollout_batch_size 4 \
    --rollout_batch_size 256 \
    --gradient_accumulation_steps 32 \
    --temperature 0.6 \
@@ -84,16 +84,14 @@ ray job submit --address="http://127.0.0.1:8265" \
    --normalize_reward \
    --flash_attn \
    --gradient_checkpointing \
-   --save_steps 20 \
-   --ckpt_path $OUTPUT_DIR/$RUN_NAME/$EXP_NAME/ckpt \
+   --save_steps 5 \
+   --load_checkpoint \
+   --ckpt_path $RESTORE_CHECKPOINT \
    --save_hf_ckpt \
    --use_tensorboard $OUTPUT_DIR/$RUN_NAME/$EXP_NAME/logs \
-   --freeze_prefix \
    --train_vlm | tee "${OUTPUT_DIR}/${RUN_NAME}/${EXP_NAME}.log"
 
 ray stop
 
 
 # --gradient_accumulation_steps 8 \
-# --freeze_prefix visual
-# --freeze_prefix visual.blocks visual.merger

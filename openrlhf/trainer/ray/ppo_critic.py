@@ -91,7 +91,7 @@ class CriticModelRayActor(BasePPORole):
         if strategy.args.save_value_network:
             if args.train_vlm:
                 self.processor = get_vl_processor(
-                    pretrain, actor.model, "left", strategy, use_fast=not strategy.args.disable_fast_tokenizer
+                    pretrain, critic, "left", strategy, use_fast=not strategy.args.disable_fast_tokenizer
                 )
             else:
                 self.tokenizer = get_tokenizer(
@@ -124,9 +124,14 @@ class CriticModelRayActor(BasePPORole):
         )
 
         # load checkpoint
-        if args.load_checkpoint and os.path.exists(os.path.join(args.ckpt_path, "_actor")):
-            ckpt_path = os.path.join(args.ckpt_path, "_critic")
-            strategy.load_ckpt(self.critic, ckpt_path)
+        ckpt_path = os.path.join(args.ckpt_path, "_critic")
+        if args.restore_ckpt_path:
+            ckpt_path = os.path.join(args.restore_ckpt_path, "_critic")
+        if args.load_checkpoint and os.path.exists(ckpt_path):
+            if args.restore_ckpt_tag:
+                _, states = strategy.load_ckpt(self.critic, ckpt_path, tag=args.restore_ckpt_tag)
+            else:
+                _, states = strategy.load_ckpt(self.critic, ckpt_path)
             strategy.print(f"Loaded the checkpoint: {ckpt_path}")
 
         # configure Trainer

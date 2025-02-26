@@ -41,19 +41,29 @@ def get_train_ds_config(
         zero_opt_dict["contiguous_gradients"] = True
     
     if gradient_accumulation_steps > 1:
-        zero_opt_dict["gradient_accumulation_steps"] = gradient_accumulation_steps
+        return {
+            "steps_per_print": 100,
+            "zero_optimization": zero_opt_dict,
+            "bf16": {
+                "enabled": bf16,
+            },
+            "gradient_accumulation_steps": gradient_accumulation_steps,
+            "gradient_clipping": max_norm,
+            "prescale_gradients": False,
+            "wall_clock_breakdown": False,
+            "data_types": {"grad_accum_dtype": grad_accum_dtype},
+        }
     return {
-        "steps_per_print": 100,
-        "zero_optimization": zero_opt_dict,
-        "bf16": {
-            "enabled": bf16,
-        },
-        "gradient_clipping": max_norm,
-        "prescale_gradients": False,
-        "wall_clock_breakdown": False,
-        "data_types": {"grad_accum_dtype": grad_accum_dtype},
-    }
-
+            "steps_per_print": 100,
+            "zero_optimization": zero_opt_dict,
+            "bf16": {
+                "enabled": bf16,
+            },
+            "gradient_clipping": max_norm,
+            "prescale_gradients": False,
+            "wall_clock_breakdown": False,
+            "data_types": {"grad_accum_dtype": grad_accum_dtype},
+        }
 
 def get_eval_ds_config(
     offload,

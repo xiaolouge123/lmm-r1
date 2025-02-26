@@ -255,6 +255,8 @@ if __name__ == "__main__":
     parser.add_argument("--max_ckpt_num", type=int, default=3)
     parser.add_argument("--max_ckpt_mem", type=int, default=1e8)
     parser.add_argument("--load_checkpoint", action="store_true", default=False)
+    parser.add_argument("--restore_ckpt_path", type=str, default=None) # 恢复checkpoint路径,from a difference training stage ckpt
+    parser.add_argument("--restore_ckpt_tag", type=str, default=None) # 恢复checkpoint标签
 
     # DeepSpeed
     parser.add_argument("--local_rank", type=int, default=-1, help="local_rank for deepspeed")

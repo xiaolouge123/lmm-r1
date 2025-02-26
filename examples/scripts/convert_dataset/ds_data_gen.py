@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 import re
-from utils import ACTION_SPACE, ACTION_OUTPUT_FORMAT, QUERY_TEMPLATE
+from utils import ACTION_SPACE, ACTION_OUTPUT_FORMAT, QUERY_TEMPLATE, OUTPUT_EXAMPLE, QUERY_TEMPLATE_WITH_FEW_SHOT
 
 
 def convert_to_distill_data(basic_data: list, task="long_cot") -> list:
@@ -49,7 +49,7 @@ def convert_to_distill_data(basic_data: list, task="long_cot") -> list:
     return data
 
 
-def convert_to_rl_data(basic_data: list) -> list:
+def convert_to_rl_data(basic_data: list, enable_few_shot: bool = False) -> list:
     def make_conv(system_prompt: str = "", user_prompt: str = "", image_path: str = ""):
         conv = []
         if system_prompt:
@@ -67,9 +67,14 @@ def convert_to_rl_data(basic_data: list) -> list:
 
     data = []
     for item in basic_data:
-        user_prompt = QUERY_TEMPLATE.substitute(
-            instruction=item["instruction"], action_spaces=ACTION_SPACE, output_action_format=ACTION_OUTPUT_FORMAT
-        )
+        if enable_few_shot:
+            user_prompt = QUERY_TEMPLATE_WITH_FEW_SHOT.substitute(
+                instruction=item["instruction"], action_spaces=ACTION_SPACE, output_example=OUTPUT_EXAMPLE
+            )
+        else:
+            user_prompt = QUERY_TEMPLATE.substitute(
+                instruction=item["instruction"], action_spaces=ACTION_SPACE, output_action_format=ACTION_OUTPUT_FORMAT
+            )
         message_str = make_conv(system_prompt="", user_prompt=user_prompt, image_path=item["image_path"])
         data.append(
             {
@@ -129,7 +134,7 @@ def main(args):
         data = convert_to_distill_data(basic_data)
     elif args.data_type == "rl":
         # 生成rl数据
-        data = convert_to_rl_data(basic_data)
+        data = convert_to_rl_data(basic_data, enable_few_shot=args.few_shot)
     else:
         raise ValueError(f"Unsupported data type: {args.data_type}")
 
@@ -140,9 +145,24 @@ def main(args):
 
 
 if __name__ == "__main__":
+
+    def str2bool(v):
+        if isinstance(v, bool):
+            return v
+        if v.lower() in ("yes", "true", "t", "1"):
+            return True
+        elif v.lower() in ("no", "false", "f", "0"):
+            return False
+        else:
+            raise argparse.ArgumentTypeError("Boolean value expected.")
+    
     parser = argparse.ArgumentParser()
     parser.add_argument("--input_path", type=str, required=True)
     parser.add_argument("--output_path", type=str, required=True)
     parser.add_argument("--data_type", type=str, required=True, default="distill", choices=["distill", "rl"])
+    parser.add_argument("--few_shot", type=str2bool, default=False)
     args = parser.parse_args()
     main(args)
+
+
+# python ds_data_gen.py --input_path /data/true_nas/zfs_share1/zyc/workspace/simpleRL-reason/AMEX_action_basic_data.jsonl --output_path /data/true_nas/zfs_share1/zyc/workspace/lmm-r1/examples/data/AMEX_acton_rl_chatml_few_shot.json --data_type rl --few_shot True

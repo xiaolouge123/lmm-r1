@@ -1,13 +1,13 @@
 set -x
 
-export CUDA_VISIBLE_DEVICES="3,4,5,6,7"
+export CUDA_VISIBLE_DEVICES="2,3,4,5,6,7"
 NUM_GPUS=$(echo $CUDA_VISIBLE_DEVICES | tr ',' '\n' | wc -l)
 
 # RUN_NAME="Qwen2.5-VL-3B-Inst-Action-RLOO-r1-zero"
-RUN_NAME="Qwen2.5-VL-7B-Inst-Action-RLOO-r1-zero"
+RUN_NAME="Qwen2.5-7B-BASE-MATH-RLOO-r1-zero"
 EXP_NAME="time_$(date +%Y%m%d_%H%M%S)"
-PATH_TO_MODEL="/data/true_nas/zfs_share1/zyc/data/models/Qwen/Qwen2.5-VL-7B-Instruct"
-PATH_TO_DATASET="/data/true_nas/zfs_share1/zyc/workspace/lmm-r1/examples/data/AMEX_acton_rl_chatml.json"
+PATH_TO_MODEL="/data/true_nas/zfs_share1/zyc/data/models/Qwen/Qwen2.5-7B"
+PATH_TO_DATASET="/data/true_nas/zfs_share1/zyc/workspace/lmm-r1/examples/data/orz_math_57k_collected_chatml.json"
 OUTPUT_DIR="/data/true_nas/zfs_share1/zyc/expr"
 
 
@@ -29,7 +29,7 @@ fi
 # the input_key for remote rm is prompt, this field data is the standard message list after apply_chat_template
 # the input_key for ppo is message, this field data is the standard message list before apply_chat_template
 
-python -m openrlhf.models.remote_rm.action_verifier --dataset $PATH_TO_DATASET --input_key message --prompt-template chatml > "${OUTPUT_DIR}/${RUN_NAME}/remote_rm.log" 2>&1 &
+python -m openrlhf.models.remote_rm.math_verifier --dataset $PATH_TO_DATASET --input_key prompt --prompt-template chatml > "${OUTPUT_DIR}/${RUN_NAME}/math_remote_rm.log" 2>&1 &
 
 childpid=$!
 
@@ -55,45 +55,41 @@ ray job submit --address="http://127.0.0.1:8265" \
    --actor_num_nodes 1 \
    --actor_num_gpus_per_node 4 \
    --vllm_num_engines 1 \
-   --vllm_tensor_parallel_size 1 \
+   --vllm_tensor_parallel_size 2 \
    --vllm_enable_sleep \
-   --vllm_gpu_memory_utilization 0.8 \
+   --vllm_gpu_memory_utilization 0.85 \
    --vllm_sync_backend gloo \
    --enable_prefix_caching \
    --pretrain $PATH_TO_MODEL \
    --save_path $OUTPUT_DIR/$RUN_NAME \
    --micro_train_batch_size 1 \
    --train_batch_size 128 \
-   --micro_rollout_batch_size 8 \
-   --rollout_batch_size 256 \
-   --gradient_accumulation_steps 32 \
-   --temperature 0.6 \
+   --micro_rollout_batch_size 2 \
+   --rollout_batch_size 128 \
+   --temperature 1 \
    --n_samples_per_prompt 8 \
    --max_epochs 1 \
    --num_episodes 10 \
-   --prompt_max_len 2048 \
-   --max_samples 100000 \
-   --generate_max_len 3000 \
+   --prompt_max_len 512 \
+   --max_samples 1000000 \
+   --generate_max_len 2048 \
    --advantage_estimator rloo \
    --zero_stage 2 \
    --bf16 \
-   --actor_learning_rate 1e-6 \
+   --actor_learning_rate 4e-7 \
    --init_kl_coef 0.0 \
    --prompt_data $PATH_TO_DATASET \
-   --input_key message \
+   --input_key prompt \
    --normalize_reward \
    --flash_attn \
    --gradient_checkpointing \
-   --save_steps 20 \
+   --save_steps 10 \
    --ckpt_path $OUTPUT_DIR/$RUN_NAME/$EXP_NAME/ckpt \
    --save_hf_ckpt \
-   --use_tensorboard $OUTPUT_DIR/$RUN_NAME/$EXP_NAME/logs \
-   --freeze_prefix \
-   --train_vlm | tee "${OUTPUT_DIR}/${RUN_NAME}/${EXP_NAME}.log"
+   --use_tensorboard $OUTPUT_DIR/$RUN_NAME/$EXP_NAME/logs | tee "${OUTPUT_DIR}/${RUN_NAME}/${EXP_NAME}.log"
 
 ray stop
 
 
 # --gradient_accumulation_steps 8 \
-# --freeze_prefix visual
-# --freeze_prefix visual.blocks visual.merger
+# --freeze_prefix 

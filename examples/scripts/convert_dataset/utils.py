@@ -142,3 +142,49 @@ The output action format should look like this:
 Please think step by step to find out the proper action to take. And only output one action at a time.
 Output the thinking process in <think></think> and final answer in <answer> </answer> tags, i.e., <think>your thinking process</think><answer>your action</answer>."""
 )
+
+
+OUTPUT_EXAMPLE = """
+<think>
+    "Okay, let's see. The user wants to open TodayTix, search for \"Les Miserables,\" and check the reviews. Let me check the current screen layout provided.\n\nLooking at the current elements, there's a search button with the description ['Search', 'Search'] and a bbox [319, 909, 499, 972]. The first step should be to tap on that search button to open the search bar. That's the most logical starting point because searching requires accessing the search function.\n\nOnce I tap the search button, the app should open a text input field where I can type \"Les Miserables.\" Since the current elements don't show a search box yet, the initial action must be to open it. After typing, I'd need to press enter to submit the search. Then, the app should display results for Les Miserables. From there, the user can select the show and check the reviews.\n\nBut wait, after searching, how do the reviews get checked? Maybe each show listing has a reviews section. So after searching, the user would need to find the correct show in the results and tap on it to view details, including reviews. However, the current layout doesn't have Les Miserables listed. The visible elements are for Fawlty Towers and other shows, so perhaps the user needs to perform the search first.\n\nSo the steps would be: Tap Search, type \"Les Miserables,\" press enter, wait for search results, then find the show and check reviews. But since the current screen doesn't show Les Miserables, the first actions are to initiate the search. Let's proceed step by step.
+</think><answer>
+    <description>
+        In this step, I will tap the Search button to open the search input field.
+    </description>
+    <action>
+        <action_name>
+            TAP
+        </action_name>
+        <parameters>
+            <parameter>
+                <param_name>
+                    point
+                </param_name>
+                <param_value>
+                    [409, 940.5]
+                </param_value>
+            </parameter>
+        </parameters>
+    </action>
+</answer>
+"""
+
+QUERY_TEMPLATE_WITH_FEW_SHOT = Template(
+"""Given the task:
+<task>
+    $instruction
+</task>
+
+Here is the action space you may take:
+<action space>
+    $action_spaces
+</action space>
+
+Here is an output example:
+<output example>
+    $output_example
+</output example>
+
+Please think step by step to find out the proper action to take. And only output one action at a time.
+Output the thinking process in <think></think> and final answer in <answer> </answer> tags, i.e., <think>your thinking process</think><answer>your action</answer>."""
+)
