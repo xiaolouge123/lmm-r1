@@ -13,7 +13,14 @@ from openrlhf.models import Actor, GPTLMLoss, PolicyLoss, ValueLoss
 from openrlhf.models.utils import masked_mean
 from openrlhf.utils.distributed_sampler import DistributedSampler
 
-from .ppo_utils import AdaptiveKLController, Experience, FixedKLController, NaiveExperienceMaker, NaiveReplayBuffer, DATA_PROCESSOR_MAP
+from .ppo_utils import (
+    AdaptiveKLController,
+    Experience,
+    FixedKLController,
+    NaiveExperienceMaker,
+    NaiveReplayBuffer,
+    DATA_PROCESSOR_MAP,
+)
 
 
 class PPOTrainer(ABC):
@@ -161,8 +168,12 @@ class PPOTrainer(ABC):
         )
         packing_samples = getattr(self.args, "packing_samples", False)
         self.replay_buffer = NaiveReplayBuffer(
-            micro_train_batch_size, self.data_processor, limit=buffer_limit, cpu_offload=buffer_cpu_offload, packing_samples=packing_samples,
-            drop_maxlen=self.args.drop_maxlen, 
+            micro_train_batch_size,
+            self.data_processor,
+            limit=buffer_limit,
+            cpu_offload=buffer_cpu_offload,
+            packing_samples=packing_samples,
+            drop_maxlen=self.args.drop_maxlen,
             maxlen=self.args.generate_max_len + prompt_max_len,
         )
 
@@ -247,7 +258,7 @@ class PPOTrainer(ABC):
                             experience.sequences[0].unsqueeze(0), skip_special_tokens=True
                         )
                         print(f"DEBUG: experience.sequences bs size: {len(experience.sequences)}")
-                        self.strategy.print(("DEBUG: One generated sequence:",output))
+                        self.strategy.print(("DEBUG: One generated sequence:", output))
                     self.replay_buffer.append(experience)
 
                 print(f"DEBUG: replay buffer length: {len(self.replay_buffer)}")
@@ -368,7 +379,7 @@ class PPOTrainer(ABC):
             num_actions = experience.action_mask.size(1)
             packed_seq_lens = None
             attention_mask = experience.attention_mask
-        
+
         print(f"DEBUG: in training_step_actor, sequences bs size: {sequences.size()}")
         # actor loss
         action_log_probs, output = self.actor(

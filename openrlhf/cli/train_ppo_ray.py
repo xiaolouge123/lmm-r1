@@ -110,7 +110,7 @@ def train(args):
             ReferenceModelRayActor,
             pg=pg,
             num_gpus_per_actor=0.2 if pg else 1,
-    )
+        )
 
     if not args.colocate_all_models:
         pg = None
@@ -255,8 +255,10 @@ if __name__ == "__main__":
     parser.add_argument("--max_ckpt_num", type=int, default=3)
     parser.add_argument("--max_ckpt_mem", type=int, default=1e8)
     parser.add_argument("--load_checkpoint", action="store_true", default=False)
-    parser.add_argument("--restore_ckpt_path", type=str, default=None) # 恢复checkpoint路径,from a difference training stage ckpt
-    parser.add_argument("--restore_ckpt_tag", type=str, default=None) # 恢复checkpoint标签
+    parser.add_argument(
+        "--restore_ckpt_path", type=str, default=None
+    )  # 恢复checkpoint路径,from a difference training stage ckpt
+    parser.add_argument("--restore_ckpt_tag", type=str, default=None)  # 恢复checkpoint标签
 
     # DeepSpeed
     parser.add_argument("--local_rank", type=int, default=-1, help="local_rank for deepspeed")
@@ -264,7 +266,7 @@ if __name__ == "__main__":
     parser.add_argument("--gradient_checkpointing", action="store_true", default=False)
     parser.add_argument("--bf16", action="store_true", default=False, help="Enable bfloat16")
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1, help="Gradient accumulation steps")
-    
+
     ## Make EMA as an optional feature
     parser.add_argument("--enable_ema", action="store_true", help="Enable EMA checkpoint for the model.")
     parser.add_argument("--zpg", type=int, default=1, help="ZeRO++ max partition size")
@@ -332,8 +334,12 @@ if __name__ == "__main__":
     parser.add_argument("--adam_betas", type=float, nargs=2, default=(0.9, 0.95), help="Betas for Adam optimizer")
     parser.add_argument("--reward_clip_range", type=float, nargs=2, default=(-10, 10), help="Reward clip range")
     parser.add_argument("--train_vlm", action="store_true", default=False)
-    parser.add_argument("--freeze_prefix", type=str, nargs="+", default=None,
-        help="List of parameter name prefixes to freeze during training"
+    parser.add_argument(
+        "--freeze_prefix",
+        type=str,
+        nargs="+",
+        default=None,
+        help="List of parameter name prefixes to freeze during training",
     )
     parser.add_argument("--drop_maxlen", action="store_true", default=False)
 
@@ -377,6 +383,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--apply_chat_template", action="store_true", default=False, help="Use HF tokenizer chat template"
     )
+    # eval
+    parser.add_argument("--eval_data", type=str, default=None, help="HF dataset name or path")
+    parser.add_argument("--eval_data_probs", type=str, default="1.0", help="sampling probs for datasets")
+    parser.add_argument("--eval_split", type=str, default="test")
+    parser.add_argument("--eval_batch_size", type=int, default=4, help="Batch size for evaluation")
 
     # wandb parameters
     parser.add_argument("--use_wandb", type=str, default=None)
@@ -424,12 +435,16 @@ if __name__ == "__main__":
             "You likely want to pass $'\\n' in Bash or \"`n\" in PowerShell."
         )
 
-    if args.train_vlm: 
+    if args.train_vlm:
         if args.packing_samples:
-            print("[Warning] --train_vlm is not supported with --packing_samples. We will set args.packing_samples to False")
+            print(
+                "[Warning] --train_vlm is not supported with --packing_samples. We will set args.packing_samples to False"
+            )
             args.packing_samples = False
         if args.pretrain_data:
-            print("[Warning] --train_vlm is not supported with --pretrain_data. We will set args.pretrain_data to None")
+            print(
+                "[Warning] --train_vlm is not supported with --pretrain_data. We will set args.pretrain_data to None"
+            )
             args.pretrain_data = None
 
     if args.packing_samples:
