@@ -387,7 +387,7 @@ if __name__ == "__main__":
     parser.add_argument("--eval_data", type=str, default=None, help="HF dataset name or path")
     parser.add_argument("--eval_data_probs", type=str, default="1.0", help="sampling probs for datasets")
     parser.add_argument("--eval_split", type=str, default="test")
-    parser.add_argument("--eval_batch_size", type=int, default=4, help="Batch size for evaluation")
+    parser.add_argument("--eval_batch_size", type=int, default=64, help="Batch size for evaluation")
 
     # wandb parameters
     parser.add_argument("--use_wandb", type=str, default=None)
