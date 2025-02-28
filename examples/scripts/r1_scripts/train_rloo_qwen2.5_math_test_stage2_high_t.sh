@@ -7,19 +7,31 @@ RUN_NAME="Qwen2.5-7B-BASE-MATH-RLOO-r1-zero"
 EXP_NAME="time_$(date +%Y%m%d_%H%M%S)"
 PATH_TO_MODEL="/data/true_nas/zfs_share1/zyc/data/models/Qwen/Qwen2.5-7B"
 PATH_TO_DATASET="/data/true_nas/zfs_share1/zyc/workspace/lmm-r1/examples/data/orz_math_57k_collected_chatml.json"
+TRAIN_PATH_TO_DATASET="/data/true_nas/zfs_share1/zyc/workspace/lmm-r1/examples/data/orz_math_57k_collected_chatml/train.json"
+EVAL_PATH_TO_DATASET="/data/true_nas/zfs_share1/zyc/workspace/lmm-r1/examples/data/orz_math_57k_collected_chatml/test.json"
 OUTPUT_DIR="/data/true_nas/zfs_share1/zyc/expr"
-RESTORE_CHECKPOINT="/data/true_nas/zfs_share1/zyc/expr/Qwen2.5-7B-BASE-MATH-RLOO-r1-zero/time_20250225_175942/ckpt"
-RESTORE_CHECKPOINT_TAG="global_step30_hf"
+RESTORE_CHECKPOINT="/data/true_nas/zfs_share1/zyc/expr/Qwen2.5-7B-BASE-MATH-RLOO-r1-zero/time_20250226_234910/ckpt"
+RESTORE_CHECKPOINT_TAG="global_step80"
 
 cleanup() {
-    echo "执行清理操作，杀死子进程..."
-    kill "$childpid" 2>/dev/null  # 忽略 "No such process" 错误
-    wait "$childpid" 2>/dev/null # Wait for the process to terminate, ignoring errors
-    echo "子进程已终止。"
+    echo "执行清理操作，杀死所有子进程..."
+    # 杀死直接子进程
+    if [ ! -z "$childpid" ]; then
+        kill "$childpid" 2>/dev/null
+        wait "$childpid" 2>/dev/null
+    fi
+    
+    # 杀死所有可能由脚本创建的进程
+    pkill -P $$ 2>/dev/null || true
+    
+    # 特别针对math_verifier和ray相关进程
+    pkill -f "openrlhf.models.remote_rm.math_verifier" 2>/dev/null || true
+    
+    echo "所有子进程已终止。"
 }
 
-# 使用 trap 命令在 EXIT 和 ERR 信号时调用 cleanup 函数
-trap cleanup EXIT ERR
+# 使用 trap 命令在 EXIT、ERR 和 INT (Ctrl+C) 信号时调用 cleanup 函数
+trap cleanup EXIT ERR INT
 
 
 if [ ! -d "${OUTPUT_DIR}/${RUN_NAME}" ]; then
@@ -57,37 +69,41 @@ ray job submit --address="http://127.0.0.1:8265" \
    --vllm_num_engines 1 \
    --vllm_tensor_parallel_size 2 \
    --vllm_enable_sleep \
-   --vllm_gpu_memory_utilization 0.8 \
+   --vllm_gpu_memory_utilization 0.9 \
    --vllm_sync_backend gloo \
    --enable_prefix_caching \
    --pretrain $PATH_TO_MODEL \
    --save_path $OUTPUT_DIR/$RUN_NAME \
    --micro_train_batch_size 1 \
-   --train_batch_size 256 \
+   --train_batch_size 128 \
    --micro_rollout_batch_size 2 \
    --rollout_batch_size 128 \
-   --gradient_accumulation_steps 64 \
-   --temperature 1 \
+   --temperature 1.3 \
    --n_samples_per_prompt 16 \
+   --gradient_accumulation_steps 32 \
    --max_epochs 1 \
    --num_episodes 10 \
-   --prompt_max_len 1024 \
+   --prompt_max_len 512 \
    --max_samples 1000000 \
-   --generate_max_len 3000 \
+   --generate_max_len 4096 \
    --advantage_estimator rloo \
    --zero_stage 2 \
    --bf16 \
    --actor_learning_rate 4e-7 \
    --init_kl_coef 0.0 \
-   --prompt_data $PATH_TO_DATASET \
+   --prompt_data $TRAIN_PATH_TO_DATASET \
    --input_key prompt \
    --normalize_reward \
    --flash_attn \
    --gradient_checkpointing \
    --save_steps 10 \
+   --eval_steps 10 \
+   --eval_batch_size 512 \
+   --eval_data $EVAL_PATH_TO_DATASET \
    --load_checkpoint \
    --ckpt_path $OUTPUT_DIR/$RUN_NAME/$EXP_NAME/ckpt \
    --restore_ckpt_path $RESTORE_CHECKPOINT \
+   --restore_ckpt_tag $RESTORE_CHECKPOINT_TAG \
    --save_hf_ckpt \
    --use_tensorboard $OUTPUT_DIR/$RUN_NAME/$EXP_NAME/logs | tee "${OUTPUT_DIR}/${RUN_NAME}/${EXP_NAME}.log"
 

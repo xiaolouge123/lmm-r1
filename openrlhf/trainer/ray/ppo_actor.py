@@ -4,6 +4,7 @@ import os
 import socket
 from typing import Callable, Dict, List
 from tqdm import tqdm
+import json
 
 import deepspeed
 import ray
@@ -169,7 +170,8 @@ class ActorPPOTrainer(PPOTrainer):
         torch.distributed.barrier()
 
         # 6. eval metrics if eval_data is provided
-        if self.eval_dataloader is not None:
+        if self.eval_dataloader is not None and global_steps % self.strategy.args.eval_steps == 0:
+            print(f"DEBUG: Evaluating at global_steps: {global_steps}")
             status.update(self.evaluation(global_steps))
 
         return status
@@ -193,34 +195,40 @@ class ActorPPOTrainer(PPOTrainer):
             self.actor.eval()
             torch.cuda.empty_cache()
 
-            samples_list = []
+            sequences = []
 
-            for batch in self.eval_dataloader:
-                samples_list.extend(self._generate_vllm(batch))
+            for batch in tqdm(self.eval_dataloader, desc="Generating samples for evaluation"):
+                sequences.extend(self._generate_vllm(batch, **self.generate_kwargs))
 
-            all_lengths = []
-            all_response_lengths = []
-            for samples in samples_list:
-                all_lengths.append(samples.total_length.mean().item())
-                all_response_lengths.append(samples.response_length.mean().item())
+            all_lengths = [seq["input_len"]+seq["output_len"] for seq in sequences]
+            all_response_lengths = [seq["output_len"] for seq in sequences]
+            all_sequences = [seq["sequence_id"] for seq in sequences]
 
             r_refs = []
+            query_list = []
+            prompts = [seq["prompt"] for seq in sequences]
             if self.remote_rm_url:
-                for samples in tqdm(samples_list, desc="Processing samples for evaluation"):
-                    if not self.packing_samples:
-                        queries = self.tokenizer.batch_decode(samples.sequences, skip_special_tokens=False)
-                    for rm in self.remote_rm_url:
-                        r = remote_rm_fn_ray.remote(rm, queries=queries, prompts=samples.prompts)
-                        r_refs.append(r)
+                queries = self.tokenizer.batch_decode(all_sequences, skip_special_tokens=False)
+                query_list.extend(queries)
+                for rm in self.remote_rm_url:
+                    r = remote_rm_fn_ray.remote(rm, queries=queries, prompts=prompts)
+                    r_refs.append(r)
             all_rewards = ray.get(r_refs)
-            all_rewards = self.reward_fn(all_rewards) if len(all_rewards) > 0 else all_rewards[0]
-
+            all_rewards = torch.stack(all_rewards) if len(all_rewards) > 0 else all_rewards[0]
+            all_rewards = all_rewards.tolist()
+            if isinstance(all_rewards[0], list):
+                all_rewards = [item for sublist in all_rewards for item in sublist]
+            
+            print(f"DEBUG: query_list length {len(query_list)}, all_rewards length {len(all_rewards)}")
+            assert len(query_list) == len(all_rewards), f"query_list length {len(query_list)} != all_rewards length {len(all_rewards)}, query_list[0]: {query_list[0]}, all_rewards[0]: {all_rewards[0]}"
+            os.makedirs(self.strategy.args.ckpt_path, exist_ok=True)
+            with open(f"{self.strategy.args.ckpt_path}/eval_completions_{global_steps}.jsonl", "a") as f:
+                for query, reward, prompt in zip(query_list, all_rewards, prompts):
+                    f.write(json.dumps({"query": query, "reward": reward, "prompt": prompt}, ensure_ascii=False) + "\n")
             # 计算平均指标
             metrics = {}
             if all_rewards:
                 metrics["eval/mean_reward"] = sum(all_rewards) / len(all_rewards)
-                metrics["eval/max_reward"] = max(all_rewards)
-                metrics["eval/min_reward"] = min(all_rewards)
 
             if all_lengths:
                 metrics["eval/mean_total_length"] = sum(all_lengths) / len(all_lengths)
@@ -237,7 +245,6 @@ class ActorPPOTrainer(PPOTrainer):
 
     def _generate_vllm(self, all_prompts: List[str], **kwargs):
         from vllm import SamplingParams
-        from openrlhf.trainer.ray.ppo_utils.experience_maker import Samples
 
         # round-robin load balance
         rank = torch.distributed.get_rank()
@@ -248,8 +255,6 @@ class ActorPPOTrainer(PPOTrainer):
         else:
             llms = self.vllm_engines[rank::world_size]
 
-        args = self.strategy.args
-        batch_size = (len(all_prompts) + len(llms) - 1) // len(llms)
 
         sampling_params = SamplingParams(
             temperature=kwargs.get("temperature", 1.0),
@@ -260,43 +265,52 @@ class ActorPPOTrainer(PPOTrainer):
             skip_special_tokens=kwargs.get("skip_special_tokens", False),
             include_stop_str_in_output=True,
         )
+        print(f"DEBUG: eval sampling_params: {sampling_params}")
         refs = []
         if self.data_processor is None:
             # For LLM
-            all_prompt_token_ids = self.tokenize_fn(all_prompts, self.prompt_max_len, padding=False)["input_ids"]
-            for i, llm in enumerate(llms):
-                prompt_token_ids = all_prompt_token_ids[i * batch_size : (i + 1) * batch_size]
-                print(f"DEBUG: Engine {i} receives {len(prompt_token_ids)} prompt token ids in eval")  # Debug
-                refs.append(
-                    llm.add_requests.remote(rank, sampling_params=sampling_params, prompt_token_ids=prompt_token_ids)
-                )
+            all_prompt_token_ids = self.tokenizer(
+                all_prompts,
+                add_special_tokens=False,
+                max_length=self.prompt_max_len,
+                truncation=True,
+            )["input_ids"]
+            
+            i = 0
+            llm = llms[i]
+            prompt_token_ids = all_prompt_token_ids
+            print(f"DEBUG: Engine {i} receives {len(prompt_token_ids)} prompt token ids in eval")  # Debug
+            refs.append(
+                llm.add_requests.remote(rank, sampling_params=sampling_params, prompt_token_ids=prompt_token_ids)
+            )
         else:
             # For VLM
-            for i, llm in enumerate(llms):
-                messages = all_prompts[i * batch_size : (i + 1) * batch_size]
-                print(f"DEBUG: Engine {i} receives {len(messages)} multi-modal messages in eval")  # Debug
-                if messages:
-                    prompts = self.data_processor.apply_chat_template(
-                        messages, tokenize=False, add_generation_prompt=True
+            i = 0
+            llm = llms[i]
+            messages = all_prompts
+            print(f"DEBUG: Engine {i} receives {len(messages)} multi-modal messages in eval")  # Debug
+            if messages:
+                prompts = self.data_processor.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+                images = [self.data_processor.get_images_from_messages(m) for m in messages]
+                print(f"DEBUG: Engine {i} receives {len(images)} images in eval, {images[0]}")  # Debug
+                vllm_inputs = [
+                    {
+                        "prompt": p,
+                        "multi_modal_data": {"image": imgs} if imgs else None,
+                        "mm_processor_kwargs": {
+                            "min_pixels": int(os.getenv("MIN_PIXELS", 4 * 28 * 28)),
+                            "max_pixels": int(os.getenv("MAX_PIXELS", 640 * 28 * 28)),
+                        },
+                    }
+                    for p, imgs in zip(prompts, images)
+                ]
+                refs.append(
+                    llm.add_requests_vlm.remote(
+                        rank, sampling_params=sampling_params, vllm_vision_input=vllm_inputs
                     )
-                    images = [self.data_processor.get_images_from_messages(m) for m in messages]
-                    print(f"DEBUG: Engine {i} receives {len(images)} images in eval, {images[0]}")  # Debug
-                    vllm_inputs = [
-                        {
-                            "prompt": p,
-                            "multi_modal_data": {"image": imgs} if imgs else None,
-                            "mm_processor_kwargs": {
-                                "min_pixels": int(os.getenv("MIN_PIXELS", 4 * 28 * 28)),
-                                "max_pixels": int(os.getenv("MAX_PIXELS", 640 * 28 * 28)),
-                            },
-                        }
-                        for p, imgs in zip(prompts, images)
-                    ]
-                    refs.append(
-                        llm.add_requests_vlm.remote(
-                            rank, sampling_params=sampling_params, vllm_vision_input=vllm_inputs
-                        )
-                    )
+                )
 
         ray.get(refs)
 
@@ -309,56 +323,26 @@ class ActorPPOTrainer(PPOTrainer):
         outputs_from_engines = ray.get(all_output_refs)
 
         all_outputs = sum(outputs_from_engines, [])
-        print(f"DEBUG: Combined all_outputs count in eval: {len(all_outputs)}")
+        print(f"DEBUG: EVAL all_outputs count: {len(all_outputs)}")
 
         assert len(all_outputs) == len(
             all_prompts
         ), f"not equal error in eval:len(all_outputs) = {len(all_outputs)}, len(all_prompts) = {len(all_prompts)}"
 
-        samples_list = []
-        for i in range(0, len(all_outputs), args.eval_batch_size):
-            outputs = all_outputs[i : i + args.eval_batch_size]
-            prompts = all_prompts[i : i + args.eval_batch_size]
-            if not self.packing_samples:
-                print(f"DEBUG: no packing samples in eval")
-                max_input_len, max_output_len = 0, 0
-                for output in outputs:
-                    max_input_len = max(max_input_len, len(output.prompt_token_ids))
-                    max_output_len = max(max_output_len, len(output.outputs[0].token_ids))
+        sequences = []
+        for output, prompt in zip(all_outputs, all_prompts):
+            input_ids = output.prompt_token_ids
+            input_len = len(input_ids)
+            output_ids = output.outputs[0].token_ids
+            output_len = len(output_ids)
+            sequences.append({
+                "sequence_id": list(input_ids)+list(output_ids),
+                "input_len": input_len,
+                "output_len": output_len,
+                "prompt": prompt,
+            })
 
-                pad_token_id, eos_token_id = self.tokenizer.pad_token_id, self.tokenizer.eos_token_id
-                sequences = []
-                for output in outputs:
-                    # left padding input
-                    input_len = len(output.prompt_token_ids)
-                    input_ids = [pad_token_id] * (max_input_len - input_len) + list(output.prompt_token_ids)
-
-                    # right padding output
-                    output_len = len(output.outputs[0].token_ids)
-                    output_ids = list(output.outputs[0].token_ids) + [pad_token_id] * (max_output_len - output_len)
-
-                    # concat input and output
-                    sequences.append(input_ids + output_ids)
-                sequences = torch.tensor(sequences)
-                sequences, attention_mask, action_mask = self.actor.process_sequences(
-                    sequences, max_input_len, eos_token_id, pad_token_id
-                )
-                visual_inputs = None
-                samples_list.append(
-                    Samples(
-                        sequences=sequences,
-                        attention_mask=attention_mask,
-                        action_mask=action_mask,
-                        num_actions=action_mask.size(1),
-                        packed_seq_lens=None,
-                        response_length=action_mask.float().sum(dim=-1),
-                        total_length=attention_mask.float().sum(dim=-1),
-                        prompts=prompts,
-                        visual_inputs=visual_inputs,
-                    )
-                )
-
-        return samples_list
+        return sequences
 
     def training_step(self, experience: Experience, global_steps) -> Dict[str, float]:
         return self.training_step_actor(experience)
@@ -612,8 +596,9 @@ class ActorModelRayActor(BasePPORole):
             )
             self.eval_dataset = PromptDataset(eval_data, self.tokenizer, strategy, input_template=args.input_template)
             self.eval_dataloader = strategy.setup_dataloader(
-                self.eval_dataset, args.eval_batch_size // strategy.world_size, True, True
+                self.eval_dataset, args.eval_batch_size, pin_memory=False, shuffle=False, collate_fn=None, drop_last=False
             )
+            print(f"DEBUG: using eval_dataloader: {len(self.eval_dataloader)}")
 
         if args.pretrain_data:
             pretrain_data = blending_datasets(
@@ -717,6 +702,9 @@ class ActorModelRayActor(BasePPORole):
 
         # broadcast checkpoint
         ckpt_path = os.path.join(args.ckpt_path, "_actor")
+        if args.restore_ckpt_path:
+            ckpt_path = os.path.join(args.restore_ckpt_path, "_actor")
+            print(f"DEBUG: Restore checkpoint from {ckpt_path}")
         if args.load_checkpoint and os.path.exists(ckpt_path) and not vllm_engines is None:
             torch.distributed.barrier()
             trainer._broadcast_to_vllm()
